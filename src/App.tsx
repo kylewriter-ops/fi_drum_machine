@@ -235,8 +235,8 @@ export default function App() {
 
         {/* Drum Grid */}
         <div className="bg-white/5 backdrop-blur-lg rounded-3xl p-6 border border-white/10 shadow-2xl">
-          <div className="overflow-x-auto scrollbar-hide">
-            <div className="grid gap-2 min-w-max" style={{ gridTemplateColumns: `200px repeat(${totalSteps}, 1fr)` }}>
+          <div className="grid-container">
+            <div className="grid gap-2" style={{ gridTemplateColumns: `200px repeat(${totalSteps}, 1fr)` }}>
               {/* Header row with beat numbers */}
               <div className="h-12 flex items-center justify-center">
                 <div className="text-slate-400 font-medium">Drums</div>
@@ -332,22 +332,24 @@ export default function App() {
           box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
         }
 
-        /* Hide scrollbars but keep functionality */
-        .scrollbar-hide {
-          -ms-overflow-style: none;  /* Internet Explorer 10+ */
-          scrollbar-width: none;  /* Firefox */
+        /* Grid container without scrollbars */
+        .grid-container {
+          overflow: hidden;
+          position: relative;
         }
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;  /* Safari and Chrome */
+        .grid-container > div {
+          overflow: visible;
         }
 
         /* Prevent layout shifts from hover effects */
         .drum-pad {
           transform: scale(1);
           transition: all 0.2s ease;
+          will-change: transform;
+          backface-visibility: hidden;
         }
         .drum-pad:hover {
-          transform: scale(1.02);
+          transform: scale(1.01);
         }
       `}</style>
     </div>
