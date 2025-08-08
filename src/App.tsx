@@ -368,79 +368,196 @@ function loadPattern(instruments: { id: string }[], cols: number) {
   return makeEmpty(instruments.length, cols);
 }
 
-// --------- Synth engines (very simple) ---------
+// --------- Acoustic drum synth engines ---------
 function synthKick(ctx: AudioContext, when: number) {
-  const osc = ctx.createOscillator();
+  // More realistic kick with multiple oscillators and better envelope
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
   const gain = ctx.createGain();
-  osc.type = "sine";
-  osc.frequency.setValueAtTime(120, when);
-  osc.frequency.exponentialRampToValueAtTime(45, when + 0.12);
-  gain.gain.setValueAtTime(1, when);
-  gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.18);
-  osc.connect(gain).connect(ctx.destination);
-  osc.start(when);
-  osc.stop(when + 0.2);
+  const filter = ctx.createBiquadFilter();
+  
+  // Main kick frequency with pitch envelope
+  osc1.type = "sine";
+  osc1.frequency.setValueAtTime(80, when);
+  osc1.frequency.exponentialRampToValueAtTime(40, when + 0.08);
+  
+  // Second oscillator for body
+  osc2.type = "sine";
+  osc2.frequency.setValueAtTime(60, when);
+  osc2.frequency.exponentialRampToValueAtTime(30, when + 0.1);
+  
+  // Low-pass filter for warmth
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(200, when);
+  filter.frequency.exponentialRampToValueAtTime(50, when + 0.15);
+  
+  // Volume envelope
+  gain.gain.setValueAtTime(0.8, when);
+  gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.25);
+  
+  osc1.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain).connect(ctx.destination);
+  
+  osc1.start(when);
+  osc2.start(when);
+  osc1.stop(when + 0.3);
+  osc2.stop(when + 0.3);
 }
 
 function synthSnare(ctx: AudioContext, when: number) {
+  // More acoustic snare with shell resonance and wire buzz
   const noise = whiteNoise(ctx);
   const noiseFilter = ctx.createBiquadFilter();
-  noiseFilter.type = "highpass";
-  noiseFilter.frequency.value = 1800;
   const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.6, when);
-  noiseGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.2);
+  
+  // Shell resonance (wooden shell)
+  const shellOsc = ctx.createOscillator();
+  const shellGain = ctx.createGain();
+  shellOsc.type = "triangle";
+  shellOsc.frequency.setValueAtTime(180, when);
+  shellOsc.frequency.exponentialRampToValueAtTime(120, when + 0.15);
+  
+  // Wire buzz (snare wires)
+  const wireOsc = ctx.createOscillator();
+  const wireGain = ctx.createGain();
+  wireOsc.type = "sawtooth";
+  wireOsc.frequency.setValueAtTime(800, when);
+  wireOsc.frequency.exponentialRampToValueAtTime(400, when + 0.2);
+  
+  // Noise processing for head
+  noiseFilter.type = "bandpass";
+  noiseFilter.frequency.setValueAtTime(2000, when);
+  noiseFilter.Q.setValueAtTime(2, when);
+  noiseGain.gain.setValueAtTime(0.4, when);
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.3);
+  
+  // Shell envelope
+  shellGain.gain.setValueAtTime(0.3, when);
+  shellGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.25);
+  
+  // Wire envelope
+  wireGain.gain.setValueAtTime(0.2, when);
+  wireGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.2);
+  
   noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+  shellOsc.connect(shellGain).connect(ctx.destination);
+  wireOsc.connect(wireGain).connect(ctx.destination);
+  
   noise.start(when);
-  noise.stop(when + 0.21);
-
-  const tone = ctx.createOscillator();
-  const toneGain = ctx.createGain();
-  tone.type = "triangle";
-  tone.frequency.setValueAtTime(200, when);
-  toneGain.gain.setValueAtTime(0.2, when);
-  toneGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.12);
-  tone.connect(toneGain).connect(ctx.destination);
-  tone.start(when);
-  tone.stop(when + 0.13);
+  shellOsc.start(when);
+  wireOsc.start(when);
+  noise.stop(when + 0.31);
+  shellOsc.stop(when + 0.26);
+  wireOsc.stop(when + 0.21);
 }
 
-function synthHiHat(ctx: AudioContext, when: number, decay = 0.05, cutoff = 8000) {
-  const noise = whiteNoise(ctx);
-  const hp = ctx.createBiquadFilter();
-  hp.type = "highpass";
-  hp.frequency.value = cutoff;
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.3, when);
-  gain.gain.exponentialRampToValueAtTime(0.0001, when + decay);
-  noise.connect(hp).connect(gain).connect(ctx.destination);
-  noise.start(when);
-  noise.stop(when + decay + 0.01);
+function synthHiHat(ctx: AudioContext, when: number, decay = 0.08, cutoff = 12000) {
+  // More realistic hi-hat with multiple noise layers
+  const noise1 = whiteNoise(ctx);
+  const noise2 = whiteNoise(ctx);
+  const hp1 = ctx.createBiquadFilter();
+  const hp2 = ctx.createBiquadFilter();
+  const gain1 = ctx.createGain();
+  const gain2 = ctx.createGain();
+  
+  // High frequency content
+  hp1.type = "highpass";
+  hp1.frequency.value = cutoff;
+  gain1.gain.setValueAtTime(0.25, when);
+  gain1.gain.exponentialRampToValueAtTime(0.0001, when + decay);
+  
+  // Lower frequency content for body
+  hp2.type = "highpass";
+  hp2.frequency.value = cutoff * 0.6;
+  gain2.gain.setValueAtTime(0.15, when);
+  gain2.gain.exponentialRampToValueAtTime(0.0001, when + decay * 1.5);
+  
+  noise1.connect(hp1).connect(gain1).connect(ctx.destination);
+  noise2.connect(hp2).connect(gain2).connect(ctx.destination);
+  
+  noise1.start(when);
+  noise2.start(when);
+  noise1.stop(when + decay + 0.01);
+  noise2.stop(when + decay * 1.5 + 0.01);
 }
 
-function synthCymbal(ctx: AudioContext, when: number, decay = 1.2, cutoff = 6000) {
-  const noise = whiteNoise(ctx);
-  const hp = ctx.createBiquadFilter();
-  hp.type = "highpass";
-  hp.frequency.value = cutoff;
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.25, when);
-  gain.gain.exponentialRampToValueAtTime(0.0001, when + decay);
-  noise.connect(hp).connect(gain).connect(ctx.destination);
-  noise.start(when);
-  noise.stop(when + decay + 0.05);
+function synthCymbal(ctx: AudioContext, when: number, decay = 2.0, cutoff = 8000) {
+  // More realistic cymbal with multiple harmonics
+  const noise1 = whiteNoise(ctx);
+  const noise2 = whiteNoise(ctx);
+  const noise3 = whiteNoise(ctx);
+  const hp1 = ctx.createBiquadFilter();
+  const hp2 = ctx.createBiquadFilter();
+  const hp3 = ctx.createBiquadFilter();
+  const gain1 = ctx.createGain();
+  const gain2 = ctx.createGain();
+  const gain3 = ctx.createGain();
+  
+  // High frequencies
+  hp1.type = "highpass";
+  hp1.frequency.value = cutoff;
+  gain1.gain.setValueAtTime(0.2, when);
+  gain1.gain.exponentialRampToValueAtTime(0.0001, when + decay);
+  
+  // Mid frequencies
+  hp2.type = "highpass";
+  hp2.frequency.value = cutoff * 0.7;
+  gain2.gain.setValueAtTime(0.15, when);
+  gain2.gain.exponentialRampToValueAtTime(0.0001, when + decay * 0.8);
+  
+  // Low frequencies for body
+  hp3.type = "highpass";
+  hp3.frequency.value = cutoff * 0.4;
+  gain3.gain.setValueAtTime(0.1, when);
+  gain3.gain.exponentialRampToValueAtTime(0.0001, when + decay * 0.6);
+  
+  noise1.connect(hp1).connect(gain1).connect(ctx.destination);
+  noise2.connect(hp2).connect(gain2).connect(ctx.destination);
+  noise3.connect(hp3).connect(gain3).connect(ctx.destination);
+  
+  noise1.start(when);
+  noise2.start(when);
+  noise3.start(when);
+  noise1.stop(when + decay + 0.05);
+  noise2.stop(when + decay * 0.8 + 0.05);
+  noise3.stop(when + decay * 0.6 + 0.05);
 }
 
 function synthTom(ctx: AudioContext, when: number, freq: number) {
-  const osc = ctx.createOscillator();
+  // More realistic tom with shell resonance and head tension
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
   const gain = ctx.createGain();
-  osc.type = "sine";
-  osc.frequency.setValueAtTime(freq, when);
+  const filter = ctx.createBiquadFilter();
+  
+  // Main tom frequency
+  osc1.type = "sine";
+  osc1.frequency.setValueAtTime(freq, when);
+  osc1.frequency.exponentialRampToValueAtTime(freq * 0.7, when + 0.2);
+  
+  // Shell resonance (harmonic)
+  osc2.type = "triangle";
+  osc2.frequency.setValueAtTime(freq * 1.5, when);
+  osc2.frequency.exponentialRampToValueAtTime(freq * 1.2, when + 0.25);
+  
+  // Low-pass filter for warmth
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(freq * 3, when);
+  filter.frequency.exponentialRampToValueAtTime(freq * 1.5, when + 0.3);
+  
+  // Volume envelope
   gain.gain.setValueAtTime(0.6, when);
-  gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.32);
-  osc.connect(gain).connect(ctx.destination);
-  osc.start(when);
-  osc.stop(when + 0.34);
+  gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.4);
+  
+  osc1.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain).connect(ctx.destination);
+  
+  osc1.start(when);
+  osc2.start(when);
+  osc1.stop(when + 0.4);
+  osc2.stop(when + 0.4);
 }
 
 function whiteNoise(ctx: AudioContext) {
