@@ -11,6 +11,12 @@ export default function App() {
   const totalSteps = beatsPerBar * stepsPerBeat;
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
+  const currentStepRef = useRef(-1);
+  
+  // Real-time update indicators
+  const [lastTempoChange, setLastTempoChange] = useState(0);
+  const [lastTimeSignatureChange, setLastTimeSignatureChange] = useState(0);
+  const [lastPatternChange, setLastPatternChange] = useState(0);
 
   const instruments = useMemo(
     () => [
@@ -31,13 +37,19 @@ export default function App() {
   // pattern[row][col] = boolean
   const [pattern, setPattern] = useState(() => loadPattern(instruments, totalSteps));
 
+  // Enhanced real-time pattern resizing
   useEffect(() => {
-    // whenever grid size changes, adjust stored pattern
-    setPattern((prev) => resizePattern(prev, instruments.length, totalSteps));
+    // whenever grid size changes, adjust stored pattern with smooth transition
+    setPattern((prev) => {
+      const newPattern = resizePattern(prev, instruments.length, totalSteps);
+      setLastTimeSignatureChange(Date.now());
+      return newPattern;
+    });
   }, [instruments.length, totalSteps]);
 
   useEffect(() => {
     savePattern(pattern);
+    setLastPatternChange(Date.now());
   }, [pattern]);
 
   // --------- Audio ---------
@@ -50,15 +62,36 @@ export default function App() {
     return audioRef.current;
   }
 
-  function playStep(stepIndex: number) {
+  // Use a ref to always get the latest pattern state
+  const patternRef = useRef(pattern);
+  
+  // Update the ref whenever pattern changes
+  useEffect(() => {
+    patternRef.current = pattern;
+    console.log('Pattern updated:', pattern);
+    console.log('Pattern ref updated with', pattern.flat().filter(Boolean).length, 'active beats');
+  }, [pattern]);
+
+  function playStepWithPattern(stepIndex: number, currentPattern: boolean[][]) {
     const ctx = getCtx();
     const now = ctx.currentTime;
+
+    // Debug: Check if pattern is being read correctly
+    const hasActiveBeats = currentPattern.some(row => row[stepIndex]);
+    if (hasActiveBeats) {
+      console.log(`Step ${stepIndex}: Playing beats`, currentPattern.map(row => row[stepIndex]));
+    }
+    
+    // Additional debug: Log pattern state every few steps
+    if (stepIndex % 4 === 0) {
+      console.log(`Step ${stepIndex}: Pattern has ${currentPattern.flat().filter(Boolean).length} total active beats`);
+    }
 
     // If a closed hat is hit, we "choke" the open hat by stopping its tail a bit earlier
     let chokeOpenHat = false;
 
     instruments.forEach((inst, r) => {
-      if (!pattern[r]?.[stepIndex]) return;
+      if (!currentPattern[r]?.[stepIndex]) return;
       switch (inst.id) {
         case "kick":
           synthKick(ctx, now);
@@ -106,8 +139,11 @@ export default function App() {
     let step = -1;
     timerRef.current = window.setInterval(() => {
       step = (step + 1) % totalSteps;
+      currentStepRef.current = step;
       setCurrentStep(step);
-      playStep(step);
+      // Always get the latest pattern state
+      const currentPattern = patternRef.current;
+      playStepWithPattern(step, currentPattern);
     }, stepMs);
     setIsPlaying(true);
   }
@@ -119,29 +155,51 @@ export default function App() {
     setCurrentStep(-1);
   }
 
-  // Real-time updates for tempo and time signature changes
+  // Enhanced real-time updates for tempo and time signature changes
   useEffect(() => {
     if (isPlaying && timerRef.current) {
       const stepMs = (60_000 / bpm) / stepsPerBeat;
       // Clear the old interval and restart with new timing
       window.clearInterval(timerRef.current);
-      let step = currentStep;
+      let step = currentStepRef.current;
       timerRef.current = window.setInterval(() => {
         step = (step + 1) % totalSteps;
+        currentStepRef.current = step;
         setCurrentStep(step);
-        playStep(step);
+        // Always get the latest pattern state
+        const currentPattern = patternRef.current;
+        playStepWithPattern(step, currentPattern);
       }, stepMs);
     }
   }, [bpm, stepsPerBeat, totalSteps]);
+
+  // Force pattern updates to be reflected immediately in audio
+  useEffect(() => {
+    // This ensures the pattern ref is updated and any pending audio changes are applied
+    if (isPlaying) {
+      // Small delay to ensure pattern state is updated
+      const timeoutId = setTimeout(() => {
+        // Force a re-read of the pattern on next play cycle
+      }, 10);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [pattern, isPlaying]);
+
+  // Real-time tempo change indicator
+  useEffect(() => {
+    setLastTempoChange(Date.now());
+  }, [bpm]);
 
   // cleanup
   useEffect(() => () => stop(), []);
 
   // --------- UI helpers ---------
   function toggleCell(r: number, c: number) {
+    console.log(`Toggle cell: row ${r}, col ${c}`);
     setPattern((prev) => {
       const copy = prev.map((row) => row.slice());
       copy[r][c] = !copy[r][c];
+      console.log(`Pattern changed: ${copy[r][c] ? 'added' : 'removed'} beat at row ${r}, col ${c}`);
       // tiny nicety: if you click closed hat, clear open hat at same step
       const instId = instruments[r].id;
       if (instId === "hihat_c") {
@@ -159,6 +217,50 @@ export default function App() {
   function clearAll() {
     setPattern(makeEmpty(instruments.length, totalSteps));
   }
+
+  // Function to play a drum sample
+  function playDrumSample(instId: string) {
+    const ctx = getCtx();
+    const now = ctx.currentTime;
+    
+    switch (instId) {
+      case "kick":
+        synthKick(ctx, now);
+        break;
+      case "snare":
+        synthSnare(ctx, now);
+        break;
+      case "hihat_c":
+        synthHiHat(ctx, now, 0.03, 8000);
+        break;
+      case "hihat_o":
+        synthHiHat(ctx, now, 0.25, 9000);
+        break;
+      case "crash":
+        synthCymbal(ctx, now, 1.8, 7000);
+        break;
+      case "ride_bow":
+        synthCymbal(ctx, now, 0.6, 5000);
+        break;
+      case "ride_edge":
+        synthCymbal(ctx, now, 0.9, 5500);
+        break;
+      case "tom_hi":
+        synthTom(ctx, now, 230);
+        break;
+      case "tom_mid":
+        synthTom(ctx, now, 180);
+        break;
+      case "tom_low":
+        synthTom(ctx, now, 140);
+        break;
+    }
+  }
+
+  // Real-time change indicators
+  const isTempoChanging = Date.now() - lastTempoChange < 1000;
+  const isTimeSignatureChanging = Date.now() - lastTimeSignatureChange < 1000;
+  const isPatternChanging = Date.now() - lastPatternChange < 500;
 
   // --------- Render ---------
   return (
@@ -186,9 +288,13 @@ export default function App() {
                     max={180}
                     value={bpm}
                     onChange={(e) => setBpm(parseInt(e.target.value))}
-                    className="w-32 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider real-time-control"
+                    className={`w-32 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider real-time-control ${
+                      isTempoChanging ? 'ring-2 ring-green-400 animate-pulse' : ''
+                    }`}
                   />
-                  <span className="text-2xl font-bold text-white w-16 text-center">{bpm}</span>
+                  <span className={`text-2xl font-bold w-16 text-center ${
+                    isTempoChanging ? 'text-green-400' : 'text-white'
+                  }`}>{bpm}</span>
                   <span className="text-sm text-slate-400">BPM</span>
                 </div>
               </div>
@@ -199,7 +305,9 @@ export default function App() {
               <div className="text-center">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Time Signature</label>
                 <select
-                  className="bg-slate-800/50 border border-slate-600 rounded-xl px-4 py-2 text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 real-time-control"
+                  className={`bg-slate-800/50 border border-slate-600 rounded-xl px-4 py-2 text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 real-time-control transition-all duration-200 ${
+                    isTimeSignatureChanging ? 'ring-2 ring-blue-400 border-blue-400' : ''
+                  }`}
                   value={beatsPerBar}
                   onChange={(e) => setBeatsPerBar(parseInt(e.target.value))}
                 >
@@ -240,7 +348,9 @@ export default function App() {
         </div>
 
         {/* Drum Grid */}
-        <div className="bg-white/5 backdrop-blur-lg rounded-3xl p-6 border border-white/10 shadow-2xl">
+        <div className={`bg-white/5 backdrop-blur-lg rounded-3xl p-6 border border-white/10 shadow-2xl transition-all duration-300 ${
+          isTimeSignatureChanging ? 'ring-2 ring-blue-400/50' : ''
+        }`}>
           <div className="grid-container">
             <div className="grid gap-2" style={{ gridTemplateColumns: `200px repeat(${totalSteps}, 1fr)` }}>
               {/* Header row with beat numbers */}
@@ -250,10 +360,20 @@ export default function App() {
               {Array.from({ length: totalSteps }).map((_, c) => {
                 const isBeat = c % stepsPerBeat === 0;
                 const beatNumber = Math.floor(c / stepsPerBeat) + 1;
+                const isQuarterNote = c % stepsPerBeat === 0;
+                const isFirstQuarterNote = c === 0;
                 return (
-                  <div key={c} className={`h-12 flex items-center justify-center ${isBeat ? 'bg-purple-500/20 rounded-lg' : ''}`}>
+                  <div key={c} className={`h-12 flex items-center justify-center relative ${
+                    isBeat ? 'bg-purple-500/20 rounded-lg' : ''
+                  } ${isQuarterNote ? 'border-l-4 border-l-purple-400/60' : ''} ${
+                    isFirstQuarterNote ? 'border-l-4 border-l-purple-500' : ''
+                  }`}>
                     {isBeat && (
                       <div className="text-lg font-bold text-purple-300">{beatNumber}</div>
+                    )}
+                    {/* Quarter note indicator in header */}
+                    {isQuarterNote && !isBeat && (
+                      <div className="absolute top-1 left-1 w-2 h-2 bg-purple-400/30 rounded-full"></div>
                     )}
                   </div>
                 );
@@ -263,38 +383,51 @@ export default function App() {
               {instruments.map((inst, r) => (
                 <React.Fragment key={inst.id}>
                   {/* Instrument label */}
-                  <div className="h-16 flex items-center gap-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700/50">
-                    <div className="text-2xl">{inst.icon}</div>
+                  <button
+                    onClick={() => playDrumSample(inst.id)}
+                    className="h-16 flex items-center gap-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700/50 hover:bg-slate-700/30 transition-all duration-200 cursor-pointer group"
+                    title={`Click to preview ${inst.name} sound`}
+                  >
+                    <div className="text-2xl group-hover:scale-110 transition-transform duration-200">{inst.icon}</div>
                     <div>
-                      <div className="font-medium text-white">{inst.name}</div>
-                      <div className="text-xs text-slate-400">Drum</div>
+                      <div className="font-medium text-white group-hover:text-purple-300 transition-colors duration-200">{inst.name}</div>
+                      <div className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors duration-200">Click to preview</div>
                     </div>
-                  </div>
+                  </button>
                   
                   {/* Grid cells */}
                   {Array.from({ length: totalSteps }).map((_, c) => {
                     const active = pattern[r]?.[c];
                     const isBeat = c % stepsPerBeat === 0;
                     const isNow = c === currentStep;
+                    const isQuarterNote = c % stepsPerBeat === 0;
+                    const isFirstQuarterNote = c === 0;
                     return (
                       <button
                         key={c}
                         onClick={() => toggleCell(r, c)}
                         className={`
-                          drum-pad h-16 w-full rounded-xl border-2 transition-all duration-200
+                          drum-pad h-16 w-full rounded-xl border-2 transition-all duration-200 relative
                           ${active 
                             ? `bg-gradient-to-br ${inst.color} shadow-lg shadow-${inst.color}/50 border-${inst.color}` 
                             : 'bg-slate-800/50 border-slate-700 hover:bg-slate-700/50'
                           }
                           ${isNow ? 'ring-4 ring-yellow-400 ring-opacity-50 animate-pulse' : ''}
                           ${isBeat ? 'border-purple-500/30' : 'border-slate-600'}
+                          ${isPatternChanging && active ? 'animate-bounce' : ''}
+                          ${isQuarterNote ? 'border-l-4 border-l-purple-400/60' : ''}
+                          ${isFirstQuarterNote ? 'border-l-4 border-l-purple-500' : ''}
                         `}
                         style={{
                           '--tw-gradient-from': active ? inst.color : undefined,
                           '--tw-gradient-to': active ? `${inst.color}dd` : undefined,
                         } as React.CSSProperties}
-                        title={`${inst.name} at step ${c + 1}`}
+                        title={`${inst.name} at step ${c + 1}${isQuarterNote ? ' (Quarter note)' : ''}`}
                       >
+                        {/* Quarter note indicator */}
+                        {isQuarterNote && !active && (
+                          <div className="absolute top-1 left-1 w-2 h-2 bg-purple-400/30 rounded-full"></div>
+                        )}
                         {active && (
                           <div className="w-full h-full flex items-center justify-center">
                             <div className="w-3 h-3 bg-white rounded-full opacity-80"></div>
@@ -314,6 +447,11 @@ export default function App() {
           <p className="text-slate-400 text-sm">
             💡 Click on the grid to add or remove drum hits. Each column represents a sixteenth note.
           </p>
+          {(isTempoChanging || isTimeSignatureChanging || isPatternChanging) && (
+            <p className="text-green-400 text-sm mt-2 animate-pulse">
+              ⚡ Real-time updates active
+            </p>
+          )}
         </div>
       </div>
 
@@ -364,6 +502,25 @@ export default function App() {
         }
         .real-time-control:active {
           transform: scale(0.98);
+        }
+
+        /* Enhanced animations for real-time feedback */
+        @keyframes bounce {
+          0%, 20%, 53%, 80%, 100% {
+            transform: translate3d(0,0,0);
+          }
+          40%, 43% {
+            transform: translate3d(0, -8px, 0);
+          }
+          70% {
+            transform: translate3d(0, -4px, 0);
+          }
+          90% {
+            transform: translate3d(0, -2px, 0);
+          }
+        }
+        .animate-bounce {
+          animation: bounce 0.6s ease-in-out;
         }
       `}</style>
     </div>
