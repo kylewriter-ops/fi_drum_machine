@@ -119,14 +119,20 @@ export default function App() {
     setCurrentStep(-1);
   }
 
+  // Real-time updates for tempo and time signature changes
   useEffect(() => {
-    if (isPlaying) {
-      // retrigger with new tempo or grid
-      stop();
-      start();
+    if (isPlaying && timerRef.current) {
+      const stepMs = (60_000 / bpm) / stepsPerBeat;
+      // Clear the old interval and restart with new timing
+      window.clearInterval(timerRef.current);
+      let step = currentStep;
+      timerRef.current = window.setInterval(() => {
+        step = (step + 1) % totalSteps;
+        setCurrentStep(step);
+        playStep(step);
+      }, stepMs);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bpm, totalSteps]);
+  }, [bpm, stepsPerBeat, totalSteps]);
 
   // cleanup
   useEffect(() => () => stop(), []);
@@ -180,7 +186,7 @@ export default function App() {
                     max={180}
                     value={bpm}
                     onChange={(e) => setBpm(parseInt(e.target.value))}
-                    className="w-32 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider"
+                    className="w-32 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider real-time-control"
                   />
                   <span className="text-2xl font-bold text-white w-16 text-center">{bpm}</span>
                   <span className="text-sm text-slate-400">BPM</span>
@@ -193,7 +199,7 @@ export default function App() {
               <div className="text-center">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Time Signature</label>
                 <select
-                  className="bg-slate-800/50 border border-slate-600 rounded-xl px-4 py-2 text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="bg-slate-800/50 border border-slate-600 rounded-xl px-4 py-2 text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 real-time-control"
                   value={beatsPerBar}
                   onChange={(e) => setBeatsPerBar(parseInt(e.target.value))}
                 >
@@ -350,6 +356,14 @@ export default function App() {
         }
         .drum-pad:hover {
           transform: scale(1.01);
+        }
+
+        /* Real-time control indicators */
+        .real-time-control:focus {
+          box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.3);
+        }
+        .real-time-control:active {
+          transform: scale(0.98);
         }
       `}</style>
     </div>
