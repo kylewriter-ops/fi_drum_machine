@@ -269,9 +269,9 @@ export default function App() {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Drum Machine
+            The <a href="https://fluidimagination.com" className="text-purple-400 hover:text-purple-300">Fluid Imagination</a> Drum Machine
           </h1>
-          <p className="text-slate-300 text-sm">Create your own beats</p>
+          <p className="text-slate-300 text-sm">Create your own beats. For free.</p>
         </div>
 
         {/* Controls */}
